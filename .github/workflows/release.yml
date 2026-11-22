@@ -1,7 +1,10 @@
-# Publishes a release when a version tag such as v0.1.0 is pushed: builds and tests, uploads to
-# Maven Central, creates the GitHub release with the jar that has all dependencies, and publishes the
-# Gradle plugin. The upload to Maven Central is not released by itself: release it by hand on the
-# Central Portal after checking it.
+# Runs when a version tag such as v0.1.0 is pushed.
+# upload: builds, tests and uploads to Maven Central without releasing.
+# publish: after approval, creates the GitHub release and publishes the Gradle plugin, which cannot
+# be undone. Approve it after releasing on the Central Portal.
+#
+# publish needs the environment release, with yourself as a required reviewer and the secrets
+# GRADLE_PUBLISH_KEY and GRADLE_PUBLISH_SECRET.
 name: Release
 
 on:
@@ -9,22 +12,21 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Release
+  upload:
+    name: Upload to Maven Central
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 
-      # Java 21 runs Gradle, and the others run the tests of the version combinations. The last one
-      # listed becomes JAVA_HOME.
+      # The last one becomes JAVA_HOME, which runs Gradle.
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -36,7 +38,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      # The tag must name the version in build.gradle, such as v0.1.0 for 0.1.0.
       - name: Check the version
         shell: bash
         run: |
@@ -66,13 +67,70 @@ jobs:
           ./gradlew publishToMavenCentral
           -Porg.gradle.java.installations.fromEnv=JAVA_HOME_11_X64,JAVA_HOME_17_X64,JAVA_HOME_21_X64,JAVA_HOME_25_X64
 
+      - name: Keep the jar with all dependencies
+        uses: actions/upload-artifact@v7
+        with:
+          name: viewer-jar
+          path: viewer/build/libs/greenmail-test-viewer.jar
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    needs: upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Check the secrets of the environment
+        shell: bash
+        env:
+          GRADLE_PUBLISH_KEY: ${{ secrets.GRADLE_PUBLISH_KEY }}
+          GRADLE_PUBLISH_SECRET: ${{ secrets.GRADLE_PUBLISH_SECRET }}
+        run: |
+          if [ -z "$GRADLE_PUBLISH_KEY" ] || [ -z "$GRADLE_PUBLISH_SECRET" ]; then
+            echo "GRADLE_PUBLISH_KEY and GRADLE_PUBLISH_SECRET are missing. Add them to the environment named release." >&2
+            exit 1
+          fi
+
+      - name: Check that the viewer is on Maven Central
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          url="https://repo1.maven.org/maven2/io/github/yukio0/greenmail-test-viewer/$version/greenmail-test-viewer-$version.jar"
+          if ! curl --fail --silent --show-error --head --location "$url" > /dev/null; then
+            echo "The viewer $version is not on Maven Central yet: $url" >&2
+            echo "Release it on the Central Portal, wait until it can be downloaded, and run this job again." >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+
+      # Only the plugin is built here.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: viewer-jar
+          path: dist
+
       - name: Create the GitHub release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME" viewer/build/libs/greenmail-test-viewer.jar
-          --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/greenmail-test-viewer.jar --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/greenmail-test-viewer.jar \
+              --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+          fi
 
       - name: Publish the Gradle plugin
         shell: bash
@@ -81,4 +139,4 @@ jobs:
           GRADLE_PUBLISH_SECRET: ${{ secrets.GRADLE_PUBLISH_SECRET }}
         run: >-
           ./gradlew :gradle-plugin:publishPlugins
-          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_11_X64,JAVA_HOME_17_X64,JAVA_HOME_21_X64,JAVA_HOME_25_X64
+          -Porg.gradle.java.installations.fromEnv=JAVA_HOME_21_X64

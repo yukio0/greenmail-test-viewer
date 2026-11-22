@@ -471,6 +471,23 @@ class FailuresAndConstraintsTest {
       RecordedMail second = run.mail("second of two");
       assertThat(second.testMethod()).isEqualTo("sendsTwoMails");
     }
+
+    @Test
+    void anUnsupportedGreenMailStopsTheRecordingOfTheExecutionButNotTheTests() throws IOException {
+      try (CapturedLogs logs = new CapturedLogs(GreenMailTestViewerExtension.class)) {
+        run(Collections.emptyMap(), true, RecordingFailureSamples.IncompatibleGreenMail.class);
+
+        assertThat(logs.warnings())
+            .singleElement()
+            .asString()
+            .startsWith("Stopped recording the emails from GreenMail in this JUnit execution");
+      }
+      assertThat(outputDirectory.resolve("runs")).doesNotExist();
+
+      // The next execution records again.
+      RecordedRun run = runSamples(PerMethodExtensionSample.class);
+      assertThat(run.mail("per-method one").testMethod()).isEqualTo("sendsOneMail");
+    }
   }
 
   @Nested

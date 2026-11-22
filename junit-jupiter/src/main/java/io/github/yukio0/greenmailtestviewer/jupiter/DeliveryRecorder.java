@@ -241,10 +241,11 @@ final class DeliveryRecorder {
       }
     }
 
+    // Called during GreenMail's delivery, where any error, even a LinkageError, loses the mail.
     private MailFolder inboxOf(GreenMailUser user) {
       try {
         return imapHostManager.getInbox(user);
-      } catch (Exception e) {
+      } catch (Exception | LinkageError e) {
         return null;
       }
     }
@@ -255,7 +256,7 @@ final class DeliveryRecorder {
       }
       try {
         return folder.getUIDNext();
-      } catch (RuntimeException e) {
+      } catch (RuntimeException | LinkageError e) {
         return -1;
       }
     }

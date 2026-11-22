@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.extension.ExtensionContext.Store;
 
@@ -27,9 +28,19 @@ final class JUnitExecution implements Store.CloseableResource, AutoCloseable {
   private final long number = EXECUTIONS.incrementAndGet();
   private final OffsetDateTime startedAt = RunWriter.now();
   private final Map<Path, RunWriter> writers = new LinkedHashMap<>();
+  private final AtomicBoolean recordingStopped = new AtomicBoolean();
 
   long number() {
     return number;
+  }
+
+  boolean isRecordingStopped() {
+    return recordingStopped.get();
+  }
+
+  /** Stops recording; returns false if it had already stopped. */
+  boolean stopRecording() {
+    return recordingStopped.compareAndSet(false, true);
   }
 
   OffsetDateTime startedAt() {

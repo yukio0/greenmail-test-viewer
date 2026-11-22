@@ -591,8 +591,15 @@ public final class GreenMailTestViewerExtension
                 link));
   }
 
-  /** Runs a recording step. Failures are logged and never make the test fail. */
+  /**
+   * Runs a recording step. Failures are logged and never make the test fail. A LinkageError also
+   * stops recording for the rest of the execution.
+   */
   private static void record(ExtensionContext context, RecordingStep step) {
+    JUnitExecution execution = execution(context);
+    if (execution.isRecordingStopped()) {
+      return;
+    }
     try {
       step.run();
     } catch (IOException | RuntimeException e) {
@@ -600,6 +607,15 @@ public final class GreenMailTestViewerExtension
           Level.WARNING,
           "Could not record the emails from GreenMail for " + context.getUniqueId(),
           e);
+    } catch (LinkageError e) {
+      if (execution.stopRecording()) {
+        LOGGER.log(
+            Level.WARNING,
+            "Stopped recording the emails from GreenMail in this JUnit execution: a class or method"
+                + " that the extension uses is missing or has changed, probably because this"
+                + " version of GreenMail or JUnit is not supported. The tests run as usual.",
+            e);
+      }
     }
   }
 

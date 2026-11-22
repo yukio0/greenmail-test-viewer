@@ -1,10 +1,12 @@
 package io.github.yukio0.greenmailtestviewer.jupiter.samples;
 
+import com.icegreen.greenmail.base.GreenMailOperations;
 import com.icegreen.greenmail.junit5.GreenMailExtension;
 import com.icegreen.greenmail.util.GreenMail;
 import com.icegreen.greenmail.util.ServerSetupTest;
 import io.github.yukio0.greenmailtestviewer.jupiter.GreenMailTestViewer;
 import java.io.IOException;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -194,6 +196,38 @@ public final class RecordingFailureSamples {
         Path first = Files.createDirectory(tests.resolve("000001.json"));
         Files.createFile(first.resolve("blocker"));
       }
+    }
+  }
+
+  /** GreenMail of a version that lacks the methods the extension calls. */
+  @GreenMailTestViewer
+  public static class IncompatibleGreenMail {
+
+    static final GreenMailOperations greenMail = lackingEveryMethod();
+
+    @Test
+    void first() {}
+
+    @Test
+    void second() {}
+
+    private static GreenMailOperations lackingEveryMethod() {
+      return (GreenMailOperations)
+          Proxy.newProxyInstance(
+              GreenMailOperations.class.getClassLoader(),
+              new Class<?>[] {GreenMailOperations.class},
+              (proxy, method, args) -> {
+                switch (method.getName()) {
+                  case "equals":
+                    return proxy == args[0];
+                  case "hashCode":
+                    return System.identityHashCode(proxy);
+                  case "toString":
+                    return "incompatible GreenMail";
+                  default:
+                    throw new NoSuchMethodError("GreenMailOperations." + method.getName());
+                }
+              });
     }
   }
 

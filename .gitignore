@@ -1,16 +1,49 @@
+# Gradle
 .gradle/
 build/
 
+# Maven
 target/
 
+# IntelliJ IDEA
 .idea/
 *.iml
+
+# VS Code
 .vscode/
-out/
-bin/
+
+# Eclipse
 .classpath
 .project
 .settings/
 
+# Java
+out/
+bin/
+*.class
+hs_err_pid*
+replay_pid*
+
+# OS
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Credentials and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Local configuration
+local.properties
+gradle-local.properties

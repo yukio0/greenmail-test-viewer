@@ -1,0 +1,109 @@
+plugins {
+  // Lifecycle tasks for the root project, so that its spotlessCheck is part of check.
+  id 'base'
+  alias(libs.plugins.spotless)
+  alias(libs.plugins.maven.publish) apply false
+}
+
+// Formats the Gradle files of all projects. Each project formats its own Java code.
+spotless {
+  lineEndings = com.diffplug.spotless.LineEnding.UNIX
+
+  groovyGradle {
+    target '*.gradle', '*/*.gradle'
+    targetExclude '**/build/**'
+    greclipse().configFile('gradle/spotless-greclipse.properties')
+    trimTrailingWhitespace()
+    endWithNewline()
+  }
+}
+
+subprojects {
+  apply plugin: 'java'
+  apply plugin: 'com.diffplug.spotless'
+
+  group = 'io.github.yukio0'
+  version = '0.1.0'
+
+  // Published modules stay on Java 11, as GreenMail 2.1 does. A module can raise it.
+  ext.javaRelease = 11
+
+  java {
+    toolchain {
+      languageVersion = JavaLanguageVersion.of(21)
+    }
+  }
+
+  tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release.set(project.provider { project.javaRelease as int })
+  }
+
+  tasks.withType(Test).configureEach { Test task ->
+    useJUnitPlatform()
+
+    // Tests run on the Java version that the module targets. A test task can choose another one.
+    javaLauncher.set(javaToolchains.launcherFor {
+      languageVersion.set(project.provider {
+        JavaLanguageVersion.of(project.javaRelease as int)
+      })
+    })
+
+    // Lets tests check which Java version they run on.
+    def launcher = task.javaLauncher
+    jvmArgumentProviders.add({
+      def version = launcher.get().metadata.languageVersion.asInt()
+      ["-Dgreenmail.testviewer.expectedJavaVersion=${version}".toString()]
+    } as CommandLineArgumentProvider)
+  }
+
+  spotless {
+    lineEndings = com.diffplug.spotless.LineEnding.UNIX
+
+    java {
+      target 'src/**/*.java'
+      // The version from the catalog, so that the formatting is the same on every Java version.
+      googleJavaFormat(libs.versions.google.java.format.get())
+      trimTrailingWhitespace()
+      endWithNewline()
+    }
+  }
+
+  pluginManager.withPlugin('com.vanniktech.maven.publish') {
+    def repositoryPath = providers.gradleProperty('repositoryPath').get()
+    mavenPublishing {
+      // Uploads to the Central Portal without releasing; the release is confirmed there by hand.
+      // The token comes from mavenCentralUsername and mavenCentralPassword, outside the repository.
+      publishToMavenCentral()
+      // Signs all files when a key is given in signingInMemoryKey and signingInMemoryKeyPassword,
+      // outside the repository. Builds without a key publish unsigned files to the local repositories;
+      // the Central Portal rejects unsigned ones.
+      if (providers.gradleProperty('signingInMemoryKey').isPresent()) {
+        signAllPublications()
+      }
+      pom {
+        url = "https://github.com/${repositoryPath}"
+        inceptionYear = '2026'
+        licenses {
+          license {
+            name = 'The Apache License, Version 2.0'
+            url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+            distribution = 'repo'
+          }
+        }
+        developers {
+          developer {
+            id = 'yukio0'
+            name = 'yukio0'
+            url = 'https://github.com/yukio0'
+          }
+        }
+        scm {
+          url = "https://github.com/${repositoryPath}"
+          connection = "scm:git:https://github.com/${repositoryPath}.git"
+          developerConnection = "scm:git:ssh://git@github.com/${repositoryPath}.git"
+        }
+      }
+    }
+  }
+}

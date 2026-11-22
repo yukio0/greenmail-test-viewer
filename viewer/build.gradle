@@ -1,0 +1,172 @@
+plugins {
+  id 'application'
+  alias(libs.plugins.shadow)
+  alias(libs.plugins.maven.publish)
+}
+
+description = 'Web viewer for the emails recorded by the greenmail-test-viewer JUnit Jupiter extension.'
+
+// The plain jar, for the Gradle plugin. The jar with all dependencies goes to GitHub Releases.
+mavenPublishing {
+  coordinates('io.github.yukio0', 'greenmail-test-viewer', version.toString())
+  pom {
+    name = 'GreenMail Test Viewer'
+    description = project.description
+  }
+}
+
+components.java.withVariantsFromConfiguration(configurations.shadowRuntimeElements) {
+  skip()
+}
+
+// For the tests of the Gradle plugin. Emptied before each publication, so that it holds only what
+// was just published.
+def pluginTestRepo = layout.buildDirectory.dir('plugin-test-repo')
+
+publishing {
+  repositories {
+    maven {
+      name = 'pluginTest'
+      url = pluginTestRepo
+    }
+  }
+}
+
+def cleanPluginTestRepo = tasks.register('cleanPluginTestRepo', Delete) {
+  delete pluginTestRepo
+}
+
+tasks.withType(PublishToMavenRepository).configureEach {
+  if (name.endsWith('ToPluginTestRepository')) {
+    dependsOn cleanPluginTestRepo
+  }
+}
+
+tasks.named('jar') {
+  manifest {
+    attributes 'Automatic-Module-Name': 'io.github.yukio0.greenmailtestviewer.viewer'
+  }
+}
+
+application {
+  mainClass = 'io.github.yukio0.greenmailtestviewer.viewer.ViewerMain'
+}
+
+dependencies {
+  // The same versions as GreenMail 2.1.15. The viewer reads .eml files and does not need GreenMail.
+  implementation libs.jakarta.mail.api
+  implementation libs.angus.mail
+  implementation libs.jakarta.activation.api
+  runtimeOnly libs.angus.activation
+  implementation libs.jsoup
+  implementation libs.jackson.databind
+
+  testImplementation platform(libs.junit.bom)
+  testImplementation libs.junit.jupiter
+  testImplementation libs.assertj.core
+  testImplementation project(':junit-jupiter')
+  testImplementation libs.junit.testkit
+  testImplementation libs.greenmail
+  testImplementation libs.greenmail.junit5
+  testRuntimeOnly libs.junit.launcher
+}
+
+tasks.named('run') {
+  // From the root, so that relative paths work as typed and all modules are found.
+  workingDir = rootProject.projectDir
+}
+
+tasks.named('shadowJar') {
+  archiveFileName = 'greenmail-test-viewer.jar'
+  // Jakarta Mail finds its implementations through service files.
+  mergeServiceFiles()
+  manifest {
+    // Keeps Jackson's classes for newer Java versions.
+    attributes 'Multi-Release': 'true'
+  }
+}
+
+tasks.named('test') {
+  // Samples that the tests run through EngineTestKit.
+  exclude 'io/github/yukio0/greenmailtestviewer/viewer/samples/**'
+
+  // ShadowJarTest starts this jar with "java -jar".
+  def shadowJarFile = tasks.named('shadowJar').flatMap { it.archiveFile }
+  inputs.file(shadowJarFile)
+      .withPropertyName('shadowJar')
+      .withPathSensitivity(PathSensitivity.NONE)
+  jvmArgumentProviders.add({
+    ["-Dgreenmail.testviewer.shadowJar=${shadowJarFile.get().asFile.absolutePath}".toString()]
+  } as CommandLineArgumentProvider)
+}
+
+// Applies the system properties of ViewerMain from the start of the JVM, because Jakarta Mail reads
+// them only once.
+tasks.withType(Test).configureEach {
+  systemProperty 'mail.mime.allowutf8', 'true'
+  systemProperty 'mail.mime.ignoreunknownencoding', 'true'
+}
+
+tasks.register('compatibilityTest') {
+  group = 'verification'
+  description = 'Runs the tests, which include starting the jar with all dependencies on Java 11.'
+  dependsOn 'test'
+}
+
+// UI tests in real browsers with Playwright. Not part of build, as the browsers are large
+// downloads. uiTest runs them in all browsers; uiTestChromium and the others run them in one.
+sourceSets {
+  uiTest {
+    compileClasspath += sourceSets.main.output + sourceSets.test.output
+    runtimeClasspath += sourceSets.main.output + sourceSets.test.output
+  }
+}
+
+configurations {
+  uiTestImplementation.extendsFrom implementation
+  uiTestRuntimeOnly.extendsFrom runtimeOnly
+}
+
+dependencies {
+  uiTestImplementation platform(libs.junit.bom)
+  uiTestImplementation libs.junit.jupiter
+  uiTestImplementation libs.assertj.core
+  uiTestImplementation libs.playwright
+  uiTestRuntimeOnly libs.junit.launcher
+}
+
+def browsers = [Chromium: 'chromium', Firefox: 'firefox', WebKit: 'webkit']
+
+browsers.each { name, browser ->
+  def install = tasks.register("installPlaywright${name}", JavaExec) {
+    description = "Downloads ${name} for the UI tests unless it is already installed."
+    classpath = sourceSets.uiTest.runtimeClasspath
+    mainClass = 'com.microsoft.playwright.CLI'
+    args 'install', browser
+  }
+
+  tasks.register("uiTest${name}", Test) {
+    group = 'verification'
+    description = "Runs the UI tests in ${name}."
+    testClassesDirs = sourceSets.uiTest.output.classesDirs
+    classpath = sourceSets.uiTest.runtimeClasspath
+    dependsOn install
+    systemProperty 'greenmail.testviewer.browser', browser
+    // Otherwise Playwright downloads all browsers when it starts.
+    environment 'PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD', '1'
+  }
+}
+
+tasks.register('uiTest') {
+  group = 'verification'
+  description = 'Runs the UI tests in Chromium, Firefox and WebKit.'
+  dependsOn browsers.keySet().collect { "uiTest${it}" }
+}
+
+// The system libraries of the browsers on Linux. Needs root, or sudo without a password.
+tasks.register('installPlaywrightDependencies', JavaExec) {
+  description = 'Installs the system libraries that the browsers need on Linux.'
+  classpath = sourceSets.uiTest.runtimeClasspath
+  mainClass = 'com.microsoft.playwright.CLI'
+  args(['install-deps'] + browsers.values())
+}

@@ -1,0 +1,64 @@
+description = 'Example tests that use the greenmail-test-viewer extension. Not published.'
+
+// The Spring sample needs Spring 6, which needs Java 17.
+ext.javaRelease = 17
+
+dependencies {
+  testImplementation platform(libs.spring.boot.dependencies)
+  testImplementation project(':junit-jupiter')
+  testImplementation libs.greenmail
+  testImplementation libs.greenmail.junit5
+  testImplementation libs.spring.boot.starter.mail
+  testImplementation libs.spring.boot.starter.test
+  testImplementation libs.junit.testkit
+  testRuntimeOnly libs.junit.launcher
+}
+
+// Tests that fail on purpose, to see failures in the viewer. Only failingExamples runs them.
+def failingExampleTag = 'failing-example'
+
+// Tests that send many emails. Only loadExamples runs them.
+def loadExampleTag = 'load-example'
+
+tasks.named('test') {
+  useJUnitPlatform {
+    excludeTags failingExampleTag, loadExampleTag
+  }
+}
+
+tasks.register('failingExamples', Test) {
+  group = 'verification'
+  description = 'Runs the example tests that fail on purpose, to see failures in the viewer.'
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  useJUnitPlatform {
+    includeTags failingExampleTag
+  }
+  ignoreFailures = true
+  // Shows the standard error, where the extension logs the links to the viewer. The standard output
+  // is left out, as GreenMail logs every email there.
+  testLogging {
+    events 'failed', 'skipped', 'standard_error'
+  }
+  // Each run writes new records for the viewer.
+  outputs.upToDateWhen { false }
+}
+
+tasks.register('loadExamples', Test) {
+  group = 'verification'
+  description =
+      'Runs example tests that send many emails. Choose the size with -PloadTests=<tests> and' +
+      ' -PloadMails=<emails per test>.'
+  testClassesDirs = sourceSets.test.output.classesDirs
+  classpath = sourceSets.test.runtimeClasspath
+  useJUnitPlatform {
+    includeTags loadExampleTag
+  }
+  systemProperty 'greenmail.testviewer.examples.load.tests',
+      providers.gradleProperty('loadTests').getOrElse('100')
+  systemProperty 'greenmail.testviewer.examples.load.mails',
+      providers.gradleProperty('loadMails').getOrElse('3')
+  // GreenMail keeps every email of a class in memory.
+  maxHeapSize = '1g'
+  outputs.upToDateWhen { false }
+}

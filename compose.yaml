@@ -1,0 +1,40 @@
+services:
+  # Gradle with JDK 21 on the source tree, for example:
+  #   docker compose run --rm dev ./gradlew build
+  dev:
+    image: eclipse-temurin:21-jdk
+    working_dir: /workspace
+    environment:
+      GRADLE_USER_HOME: /gradle-cache
+    volumes:
+      - .:/workspace
+      - gradle-cache:/gradle-cache
+      # The state and outputs of Gradle stay in volumes, as they record absolute paths that differ
+      # from those of the host. Add a volume when adding a module.
+      - project-cache:/workspace/.gradle
+      - build-root:/workspace/build
+      - build-junit-jupiter:/workspace/junit-jupiter/build
+      - build-viewer:/workspace/viewer/build
+      - build-examples:/workspace/examples/build
+      - build-gradle-plugin:/workspace/gradle-plugin/build
+
+  # The viewer, serving the UI files from the source tree, so that reloading the page shows a
+  # change: docker compose up viewer-dev, then open http://localhost:3080/
+  viewer-dev:
+    extends:
+      service: dev
+    command:
+      - ./gradlew
+      - :viewer:run
+      - --args=--host 0.0.0.0 --static-dir viewer/src/main/resources/static
+    ports:
+      - "127.0.0.1:3080:3080"
+
+volumes:
+  gradle-cache:
+  project-cache:
+  build-root:
+  build-junit-jupiter:
+  build-viewer:
+  build-examples:
+  build-gradle-plugin:

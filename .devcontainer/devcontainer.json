@@ -1,0 +1,19 @@
+{
+  "name": "greenmail-test-viewer",
+  "image": "mcr.microsoft.com/devcontainers/java:1-21-bookworm",
+  "forwardPorts": [3080],
+  // Keeps the dependencies and JDKs when the container is rebuilt.
+  "mounts": [
+    "source=greenmail-test-viewer-gradle-cache,target=/home/vscode/.gradle,type=volume"
+  ],
+  // A new volume is owned by root.
+  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.gradle",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "vscjava.vscode-gradle"
+      ]
+    }
+  }
+}

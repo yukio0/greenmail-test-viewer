@@ -1,0 +1,17 @@
+plugins {
+  // Downloads the JDKs of the toolchains. The catalog is not available here.
+  id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+dependencyResolutionManagement {
+  repositories {
+    mavenCentral()
+  }
+}
+
+rootProject.name = 'greenmail-test-viewer'
+
+include 'junit-jupiter'
+include 'viewer'
+include 'examples'
+include 'gradle-plugin'

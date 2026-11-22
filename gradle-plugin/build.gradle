@@ -1,0 +1,104 @@
+plugins {
+  id 'java-gradle-plugin'
+  alias(libs.plugins.plugin.publish)
+}
+
+description = 'Gradle plugin that starts GreenMail Test Viewer to show the emails that JUnit ' +
+    'tests sent.'
+
+// The plugin starts the viewer of the same version, which it reads from this file.
+tasks.named('processResources') {
+  def pluginVersion = version.toString()
+  inputs.property('version', pluginVersion)
+  filesMatching('**/plugin.properties') {
+    expand(version: pluginVersion)
+  }
+}
+
+tasks.named('jar') {
+  manifest {
+    attributes 'Automatic-Module-Name': 'io.github.yukio0.greenmailtestviewer.gradle'
+  }
+}
+
+def repositoryPath = providers.gradleProperty('repositoryPath').get()
+gradlePlugin {
+  website = "https://github.com/${repositoryPath}"
+  vcsUrl = "https://github.com/${repositoryPath}"
+  plugins {
+    greenmailTestViewer {
+      id = 'io.github.yukio0.greenmail-test-viewer'
+      implementationClass = 'io.github.yukio0.greenmailtestviewer.gradle.GreenMailTestViewerPlugin'
+      displayName = 'GreenMail Test Viewer'
+      description = 'Adds the greenmailTestViewer task, which starts GreenMail Test Viewer to show ' +
+          'the emails that the JUnit tests of the build sent to GreenMail.'
+      tags = ['greenmail', 'junit', 'testing', 'email']
+    }
+  }
+}
+
+publishing {
+  publications.withType(MavenPublication).configureEach {
+    if (name == 'pluginMaven') {
+      artifactId = 'greenmail-test-viewer-gradle-plugin'
+    }
+  }
+}
+
+// The viewer that the test builds start, also used as an input of the tests.
+configurations {
+  testedViewer {
+    canBeConsumed = false
+    canBeResolved = true
+    attributes {
+      attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+      attribute(Category.CATEGORY_ATTRIBUTE, objects.named(Category, Category.LIBRARY))
+      attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE,
+          objects.named(LibraryElements, LibraryElements.JAR))
+      attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling, Bundling.EXTERNAL))
+    }
+  }
+}
+
+dependencies {
+  testImplementation platform(libs.junit.bom)
+  testImplementation libs.junit.jupiter
+  testImplementation libs.assertj.core
+  testRuntimeOnly libs.junit.launcher
+  testedViewer project(':viewer')
+}
+
+// The POM and module metadata of the viewer, without the sizes and checksums of its files, so that
+// changing a comment does not rerun the tests.
+def viewerMetadata = tasks.register('viewerMetadata', Sync) {
+  description = "Copies the parts of the viewer's publication that the tests read."
+  dependsOn ':viewer:generatePomFileForMavenPublication',
+      ':viewer:generateMetadataFileForMavenPublication'
+  from(project(':viewer').layout.buildDirectory.dir('publications/maven')) {
+    include 'pom-default.xml', 'module.json'
+  }
+  filter { String line -> line ==~ /\s*"(size|sha\d+|md5)": .*/ ? null : line }
+  into layout.buildDirectory.dir('viewer-metadata')
+}
+
+tasks.named('test') {
+  // The test builds run on this Java version, and Gradle 9 needs Java 17.
+  javaLauncher = javaToolchains.launcherFor {
+    languageVersion = JavaLanguageVersion.of(17)
+  }
+  // The test builds take the viewer from a Maven repository, as the user's build does.
+  dependsOn ':viewer:publishAllPublicationsToPluginTestRepository'
+  // Compared as a classpath, so that timestamps in the jar do not rerun the tests.
+  inputs.files(configurations.testedViewer)
+      .withPropertyName('testedViewer')
+      .withNormalizer(ClasspathNormalizer)
+  inputs.files(viewerMetadata)
+      .withPropertyName('viewerMetadata')
+      .withPathSensitivity(PathSensitivity.NAME_ONLY)
+  def repository = project(':viewer').layout.buildDirectory.dir('plugin-test-repo')
+  jvmArgumentProviders.add({
+    ["-Dgreenmail.testviewer.repository=${repository.get().asFile.absolutePath}".toString()]
+  } as CommandLineArgumentProvider)
+  systemProperty 'greenmail.testviewer.version', version.toString()
+  systemProperty 'greenmail.testviewer.oldestGradle', libs.versions.gradle.oldest.get()
+}

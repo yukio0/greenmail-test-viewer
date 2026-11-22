@@ -1,0 +1,123 @@
+plugins {
+  id 'java-library'
+  alias(libs.plugins.maven.publish)
+}
+
+description = 'JUnit Jupiter extension that records the emails GreenMail receives in each test.'
+
+mavenPublishing {
+  coordinates('io.github.yukio0', 'greenmail-test-viewer-junit-jupiter', version.toString())
+  pom {
+    name = 'GreenMail Test Viewer JUnit Jupiter Extension'
+    description = project.description
+  }
+}
+
+tasks.named('jar') {
+  manifest {
+    attributes 'Automatic-Module-Name': 'io.github.yukio0.greenmailtestviewer.jupiter'
+  }
+}
+
+dependencies {
+  // Provided by the user's test classpath.
+  compileOnly libs.greenmail
+  compileOnly platform(libs.junit.bom)
+  compileOnly libs.junit.api
+
+  testImplementation platform(libs.junit.bom)
+  testImplementation libs.junit.jupiter
+  testImplementation libs.junit.testkit
+  testImplementation libs.assertj.core
+  testImplementation libs.greenmail
+  testImplementation libs.greenmail.junit5
+  // Only to read the recorded JSON files in tests.
+  testImplementation libs.jackson.databind
+  testRuntimeOnly libs.junit.launcher
+}
+
+// Samples that the tests run through EngineTestKit.
+def samples = 'io/github/yukio0/greenmailtestviewer/jupiter/samples/**'
+
+def expectedGreenMailVersion = 'greenmail.testviewer.expectedGreenMailVersion'
+
+tasks.named('test') {
+  exclude samples
+  systemProperty expectedGreenMailVersion, libs.versions.greenmail.asProvider().get()
+}
+
+// The same tests with other versions of Java, JUnit and GreenMail, against the extension compiled
+// for JUnit 5.14.4 and GreenMail 2.1.15.
+def combinations = [
+  // The oldest supported versions, enforced because greenmail-junit5 asks for a newer JUnit.
+  testJava11Junit5Oldest: [
+    java: 11, junitBom: libs.junit.oldest.bom, enforced: true,
+    greenmail: libs.greenmail.oldest, greenmailJunit5: libs.greenmail.junit5.oldest,
+    greenmailVersion: libs.versions.greenmail.oldest.get(),
+  ],
+  testJava17Junit6: [
+    java: 17, junitBom: libs.junit6.bom,
+    greenmail: libs.greenmail, greenmailJunit5: libs.greenmail.junit5,
+    greenmailVersion: libs.versions.greenmail.asProvider().get(),
+  ],
+  testJava21Junit6: [
+    java: 21, junitBom: libs.junit6.bom,
+    greenmail: libs.greenmail, greenmailJunit5: libs.greenmail.junit5,
+    greenmailVersion: libs.versions.greenmail.asProvider().get(),
+  ],
+  testJava25Latest: [
+    java: 25, junitBom: libs.junit.latest.bom,
+    greenmail: libs.greenmail.latest, greenmailJunit5: libs.greenmail.junit5.latest,
+    greenmailVersion: libs.versions.greenmail.latest.get(),
+  ],
+]
+
+testing {
+  suites {
+    combinations.each { name, versions ->
+      register(name, JvmTestSuite) {
+        sources {
+          java { srcDirs = ['src/test/java'] }
+          resources { srcDirs = ['src/test/resources'] }
+        }
+        dependencies {
+          implementation project()
+          implementation(versions.enforced
+              ? enforcedPlatform(versions.junitBom)
+              : platform(versions.junitBom))
+          implementation libs.junit.jupiter
+          implementation libs.junit.testkit
+          implementation libs.assertj.core
+          implementation versions.greenmail
+          implementation versions.greenmailJunit5
+          implementation libs.jackson.databind
+          runtimeOnly libs.junit.launcher
+        }
+        tasks.named(sources.compileJavaTaskName) {
+          options.release.set(versions.java < 17 ? versions.java : 17)
+        }
+        targets {
+          all {
+            testTask.configure {
+              exclude samples
+              systemProperty expectedGreenMailVersion, versions.greenmailVersion
+              javaLauncher.set(javaToolchains.launcherFor {
+                languageVersion = JavaLanguageVersion.of(versions.java)
+              })
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+tasks.register('compatibilityTest') {
+  group = 'verification'
+  description = 'Runs the tests with every combination of Java, JUnit and GreenMail versions.'
+  dependsOn 'test', combinations.keySet()
+}
+
+tasks.named('check') {
+  dependsOn combinations.keySet()
+}

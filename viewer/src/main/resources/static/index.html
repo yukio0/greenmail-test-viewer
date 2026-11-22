@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GreenMail Test Viewer</title>
+    <!-- So that the browser does not ask for /favicon.ico. -->
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="js/main.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="top-bar">
+        <h1 class="app-title"><a href="/">GreenMail Test Viewer</a></h1>
+        <div class="toolbar">
+          <label class="run-field">
+            <span>Run</span>
+            <select id="run-select">
+              <option value="">Latest per test</option>
+            </select>
+          </label>
+          <button id="run-info-button" type="button" class="run-info-button" aria-expanded="false"
+                  aria-controls="run-info-panel"
+                  title="Show where the tests ran and which versions they used">Run info</button>
+          <button id="problems-button" type="button" class="problems-button" aria-expanded="false"
+                  aria-controls="problems-panel" title="Show what could not be read"
+                  hidden>0 read problems</button>
+          <span id="live-update" class="live-update-badge" title="New records are shown automatically">
+            <span class="live-update-dot"></span>
+            <span id="live-update-text" class="live-update-text">Auto refresh</span>
+          </span>
+        </div>
+      </header>
+
+      <div id="error-banner" class="error-banner" role="alert" hidden></div>
+
+      <div id="side-panels" class="side-panels">
+        <section id="run-info-panel" class="info-panel" aria-label="Run information" hidden></section>
+        <section id="problems-panel" class="problems-panel" aria-label="Read problems" hidden></section>
+      </div>
+
+      <section id="layout" class="mail-layout">
+        <nav class="tree-pane" aria-label="Tests">
+          <div class="pane-header">
+            <h2>Tests</h2>
+            <button id="failed-only" type="button" class="filter-button" aria-pressed="false"
+                    title="Show only failed tests" disabled>
+              Failed only <span id="failed-count" class="count">0</span>
+            </button>
+          </div>
+          <div id="tree" class="scroll tree-scroll"></div>
+          <div class="pane-resizer" data-resize="tree" role="separator" tabindex="0"
+               aria-orientation="vertical" aria-label="Width of the test tree"
+               title="Drag to change the width. Double-click to reset it."></div>
+        </nav>
+
+        <section class="message-list-pane" aria-label="Messages">
+          <div class="pane-header">
+            <h2 id="list-title">All messages</h2>
+            <div class="pane-header-actions">
+              <button id="list-new" type="button" class="new-button" title="Show the new messages"
+                      hidden>0 new</button>
+              <button id="list-order" type="button" class="order-button"
+                      title="Change the order of the messages">Newest first</button>
+              <span id="list-count" class="count">0</span>
+            </div>
+          </div>
+          <label class="search-field">
+            <span class="search-label">Search <kbd title="Press / to search">/</kbd></span>
+            <input id="search" type="search" autocomplete="off" aria-keyshortcuts="/"
+                   placeholder="Subject, address, body, class or method">
+          </label>
+          <div id="list" class="scroll"></div>
+          <p id="list-status" class="visually-hidden" aria-live="polite"></p>
+          <div class="pane-resizer" data-resize="list" role="separator" tabindex="0"
+               aria-orientation="vertical" aria-label="Width of the message list"
+               title="Drag to change the width. Double-click to reset it."></div>
+        </section>
+
+        <section class="message-detail-pane" aria-label="Message">
+          <div class="pane-resizer horizontal" data-resize="top" role="separator" tabindex="0"
+               aria-orientation="horizontal" aria-label="Height of the test tree and message list"
+               title="Drag to change the height. Double-click to reset it."></div>
+          <div id="detail" class="detail-content"></div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

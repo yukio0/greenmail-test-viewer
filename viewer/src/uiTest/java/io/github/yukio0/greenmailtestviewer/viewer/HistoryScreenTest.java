@@ -102,6 +102,7 @@ class HistoryScreenTest extends ScreenTestBase {
   @Test
   void anAutomaticRefreshWhileBackLoadsAnotherListKeepsTheMail() {
     select("InvoiceTest");
+    assertThat(cards()).hasCount(2);
     card("Invoice 42").click();
     assertThat(detailHeading()).hasText("Invoice 42");
     select("SignupTest");
@@ -148,6 +149,7 @@ class HistoryScreenTest extends ScreenTestBase {
   @Test
   void reloadingShowsTheSameSelection() {
     select("InvoiceTest");
+    assertThat(cards()).hasCount(2);
     card("Invoice 42").click();
     assertThat(detailHeading()).hasText("Invoice 42");
 

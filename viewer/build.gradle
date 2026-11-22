@@ -76,10 +76,35 @@ tasks.named('run') {
   workingDir = rootProject.projectDir
 }
 
+// The license and notice files of the libraries go to META-INF/licenses/<group>/<module> in the jar
+// with all dependencies. In META-INF itself, files of the same name would overwrite each other.
+def licenseFiles = ['META-INF/**/*LICENSE*', 'META-INF/**/*NOTICE*']
+
+def libraryLicenses = tasks.register('libraryLicenses', Sync) {
+  description = 'Collects the license and notice files of the libraries in the jar with all ' +
+      'dependencies.'
+  into layout.buildDirectory.dir('library-licenses')
+  includeEmptyDirs = false
+  configurations.runtimeClasspath.incoming.artifacts.artifacts.each { artifact ->
+    def library = artifact.id.componentIdentifier
+    from(zipTree(artifact.file)) {
+      include licenseFiles
+      eachFile { it.path = "${library.group}/${library.module}/${it.name}" }
+    }
+  }
+}
+
 tasks.named('shadowJar') {
   archiveFileName = 'greenmail-test-viewer.jar'
   // Jakarta Mail finds its implementations through service files.
   mergeServiceFiles()
+  exclude licenseFiles
+  from(rootProject.file('LICENSE')) {
+    into 'META-INF'
+  }
+  from(libraryLicenses) {
+    into 'META-INF/licenses'
+  }
   manifest {
     // Keeps Jackson's classes for newer Java versions.
     attributes 'Multi-Release': 'true'
@@ -97,6 +122,19 @@ tasks.named('test') {
       .withPathSensitivity(PathSensitivity.NONE)
   jvmArgumentProviders.add({
     ["-Dgreenmail.testviewer.shadowJar=${shadowJarFile.get().asFile.absolutePath}".toString()]
+  } as CommandLineArgumentProvider)
+
+  // ShadowJarTest checks that the jar keeps the license files of these libraries.
+  def libraries = configurations.runtimeClasspath.incoming.artifacts.resolvedArtifacts.map {
+    List<String> names = it.collect { artifact ->
+      def library = artifact.id.componentIdentifier
+      "${library.group}/${library.module}".toString()
+    }
+    names.sort().join(',')
+  }
+  inputs.property('libraries', libraries)
+  jvmArgumentProviders.add({
+    ["-Dgreenmail.testviewer.libraries=${libraries.get()}".toString()]
   } as CommandLineArgumentProvider)
 }
 

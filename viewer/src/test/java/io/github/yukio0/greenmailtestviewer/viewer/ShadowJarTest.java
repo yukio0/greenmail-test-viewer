@@ -14,17 +14,22 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ShadowJarTest {
 
   private static final Pattern RUNNING_AT = Pattern.compile("running at (http://\\S+?)/?$");
+  private static final Pattern LICENSE_FILE = Pattern.compile("(LICENSE|NOTICE)[^/]*$");
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   @TempDir Path project;
@@ -68,6 +73,38 @@ class ShadowJarTest {
     } finally {
       viewer.destroy();
       viewer.waitFor(10, TimeUnit.SECONDS);
+    }
+  }
+
+  @Test
+  void keepsTheLicenseFilesOfEachLibrary() throws IOException {
+    String jar = System.getProperty("greenmail.testviewer.shadowJar");
+    String libraries = System.getProperty("greenmail.testviewer.libraries");
+    assumeTrue(jar != null && libraries != null, "the jar or its libraries are not set");
+    try (ZipFile zip = new ZipFile(jar)) {
+      List<String> names = zip.stream().map(ZipEntry::getName).collect(Collectors.toList());
+
+      byte[] license = zip.getInputStream(zip.getEntry("META-INF/LICENSE")).readAllBytes();
+      assertThat(new String(license, StandardCharsets.UTF_8))
+          .contains("Apache License")
+          .contains("Version 2.0");
+      // Any other in META-INF could be one library's file that overwrote another's.
+      assertThat(names)
+          .filteredOn(name -> name.startsWith("META-INF/") && LICENSE_FILE.matcher(name).find())
+          .allMatch(
+              name -> name.equals("META-INF/LICENSE") || name.startsWith("META-INF/licenses/"));
+      for (String library : libraries.split(",")) {
+        assertThat(names)
+            .as(library)
+            .anyMatch(name -> name.startsWith("META-INF/licenses/" + library + "/LICENSE"));
+      }
+      assertThat(names)
+          .contains(
+              "META-INF/licenses/jakarta.activation/jakarta.activation-api/NOTICE.md",
+              "META-INF/licenses/org.eclipse.angus/angus-activation/NOTICE.md",
+              "META-INF/licenses/org.eclipse.angus/jakarta.mail/NOTICE.md",
+              "META-INF/licenses/com.fasterxml.jackson.core/jackson-databind/NOTICE",
+              "META-INF/licenses/org.jsoup/jsoup/LICENSE");
     }
   }
 

@@ -2,6 +2,8 @@
 
 The notable changes in each version of GreenMail Test Viewer.
 
+## Unreleased
+
 ## 0.1.0 - 2026-11-23
 
 The first release.

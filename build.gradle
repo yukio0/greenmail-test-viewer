@@ -23,7 +23,7 @@ subprojects {
   apply plugin: 'com.diffplug.spotless'
 
   group = 'io.github.yukio0'
-  version = '0.1.0'
+  version = '0.1.1-SNAPSHOT'
 
   // Published modules stay on Java 11, as GreenMail 2.1 does. A module can raise it.
   ext.javaRelease = 11

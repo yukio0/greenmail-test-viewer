@@ -5,11 +5,13 @@ import com.icegreen.greenmail.imap.ImapHostManager;
 import com.icegreen.greenmail.mail.MailAddress;
 import com.icegreen.greenmail.mail.MovingMessage;
 import com.icegreen.greenmail.store.MailFolder;
+import com.icegreen.greenmail.store.StoredMessage;
 import com.icegreen.greenmail.user.GreenMailUser;
 import com.icegreen.greenmail.user.MessageDeliveryHandler;
 import com.icegreen.greenmail.user.UserException;
 import com.icegreen.greenmail.user.UserManager;
 import jakarta.mail.MessagingException;
+import java.lang.ref.SoftReference;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -21,16 +23,18 @@ import java.util.Set;
 import java.util.WeakHashMap;
 
 /**
- * Records which SMTP transaction each stored copy of a mail belongs to, and which transactions are
- * still being delivered.
+ * Records which SMTP transaction each stored copy of a mail belongs to, which transactions are
+ * still being delivered, and the stored copies themselves.
  *
  * <p>GreenMail stores one copy per recipient. Wrapping its {@link MessageDeliveryHandler}
  * distinguishes the copies of one transaction from identical mails sent separately, and lets a
- * collection skip a transaction until every recipient has its copy.
+ * collection skip a transaction until every recipient has its copy. Keeping the stored copies lets
+ * a collection take a mail that was deleted before it, for example by a test that purges GreenMail
+ * or by a POP3 client.
  */
 final class DeliveryRecorder {
 
-  private final Map<MailFolder, Map<Long, Long>> transactionsByUid = new WeakHashMap<>();
+  private final Map<MailFolder, Map<Long, Copy>> copiesByUid = new WeakHashMap<>();
   private final Map<MovingMessage, Transaction> transactions = new WeakHashMap<>();
   private final Map<UserManager, Transaction> delivering = new WeakHashMap<>();
   private long lastTransactionId;
@@ -61,12 +65,19 @@ final class DeliveryRecorder {
   }
 
   synchronized Long transactionOf(MailFolder folder, long uid) {
-    Map<Long, Long> byUid = transactionsByUid.get(folder);
-    return byUid == null ? null : byUid.get(uid);
+    Map<Long, Copy> byUid = copiesByUid.get(folder);
+    Copy copy = byUid == null ? null : byUid.get(uid);
+    return copy == null ? null : copy.transaction;
+  }
+
+  /** The copies stored in the folder that were not forgotten yet, by their UID. */
+  synchronized Map<Long, Copy> copiesIn(MailFolder folder) {
+    Map<Long, Copy> byUid = copiesByUid.get(folder);
+    return byUid == null ? Map.of() : new HashMap<>(byUid);
   }
 
   synchronized void forget(MailFolder folder, long uid) {
-    Map<Long, Long> byUid = transactionsByUid.get(folder);
+    Map<Long, Copy> byUid = copiesByUid.get(folder);
     if (byUid != null) {
       byUid.remove(uid);
     }
@@ -116,14 +127,16 @@ final class DeliveryRecorder {
     delivering.remove(userManager, transaction);
   }
 
-  private synchronized void remember(MailFolder folder, long uid, long transaction) {
-    transactionsByUid.computeIfAbsent(folder, key -> new HashMap<>()).put(uid, transaction);
+  private synchronized Copy remember(MailFolder folder, long uid, long transaction) {
+    Copy copy = new Copy(transaction);
+    copiesByUid.computeIfAbsent(folder, key -> new HashMap<>()).put(uid, copy);
+    return copy;
   }
 
-  private synchronized void unremember(MailFolder folder, long uid, long transaction) {
-    Map<Long, Long> byUid = transactionsByUid.get(folder);
+  private synchronized void unremember(MailFolder folder, long uid, Copy copy) {
+    Map<Long, Copy> byUid = copiesByUid.get(folder);
     if (byUid != null) {
-      byUid.remove(uid, transaction);
+      byUid.remove(uid, copy);
     }
   }
 
@@ -138,6 +151,34 @@ final class DeliveryRecorder {
 
     boolean includes(long transaction) {
       return transaction <= lastTransaction && !unfinished.contains(transaction);
+    }
+  }
+
+  /** A copy of a mail in one mailbox: its transaction, and the copy once GreenMail stored it. */
+  static final class Copy {
+    private final long transaction;
+    // Soft, so that copies that no collection takes, such as those that tests without the extension
+    // delete, do not fill the memory.
+    private volatile SoftReference<StoredMessage> stored;
+
+    private Copy(long transaction) {
+      this.transaction = transaction;
+    }
+
+    long transaction() {
+      return transaction;
+    }
+
+    /** The stored copy, or {@code null} if it could not be kept. */
+    StoredMessage storedMessage() {
+      SoftReference<StoredMessage> reference = stored;
+      return reference == null ? null : reference.get();
+    }
+
+    private void keep(StoredMessage message) {
+      if (message != null) {
+        stored = new SoftReference<>(message);
+      }
     }
   }
 
@@ -206,31 +247,36 @@ final class DeliveryRecorder {
         throws Throwable {
       MailFolder inbox = inboxOf(user);
       long uid = uidNext(inbox);
-      if (uid >= 0) {
-        // Remembered before the copy is stored, so that a collection never sees it without its
-        // transaction.
-        remember(inbox, uid, transaction.id);
-      }
+      // Remembered before the copy is stored, so that a collection never sees it without its
+      // transaction.
+      Copy copy = uid >= 0 ? remember(inbox, uid, transaction.id) : null;
       Object result;
       recording.set(true);
       try {
         result = invoke(user, method, args);
       } catch (Throwable e) {
-        keepIfStored(inbox, uid, transaction);
+        keepIfStored(inbox, uid, copy);
         end(userManager, transaction);
         throw e;
       } finally {
         recording.set(false);
       }
-      keepIfStored(inbox, uid, transaction);
+      keepIfStored(inbox, uid, copy);
       deliveredToOne(userManager, transaction);
       return result;
     }
 
-    private void keepIfStored(MailFolder inbox, long uid, Transaction transaction) {
-      if (uid >= 0 && uidNext(inbox) != uid + 1) {
-        unremember(inbox, uid, transaction.id);
+    // Kept before the transaction counts as delivered, so that a collection that finds the copy
+    // deleted can take it.
+    private void keepIfStored(MailFolder inbox, long uid, Copy copy) {
+      if (copy == null) {
+        return;
       }
+      if (uidNext(inbox) != uid + 1) {
+        unremember(inbox, uid, copy);
+        return;
+      }
+      copy.keep(storedMessage(inbox, uid));
     }
 
     private Object invoke(GreenMailUser user, Method method, Object[] args) throws Throwable {
@@ -258,6 +304,15 @@ final class DeliveryRecorder {
         return folder.getUIDNext();
       } catch (RuntimeException | LinkageError e) {
         return -1;
+      }
+    }
+
+    // Called during GreenMail's delivery, like inboxOf.
+    private StoredMessage storedMessage(MailFolder folder, long uid) {
+      try {
+        return folder.getMessage(uid);
+      } catch (RuntimeException | LinkageError e) {
+        return null;
       }
     }
 

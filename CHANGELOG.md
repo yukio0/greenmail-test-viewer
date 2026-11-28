@@ -6,6 +6,9 @@ The notable changes in each version of GreenMail Test Viewer.
 
 ### Extension
 
+- Records the emails that are deleted from GreenMail during a test, for example by
+  `purgeEmailFromAllMailboxes()` or by the code under test reading them over POP3 or IMAP. Before,
+  only the emails still in GreenMail at the end of the test were recorded.
 - After recording stopped during a test, a later JUnit execution in the same JVM no longer
   records the emails of the same GreenMail instance as `(Ambiguous)`.
 

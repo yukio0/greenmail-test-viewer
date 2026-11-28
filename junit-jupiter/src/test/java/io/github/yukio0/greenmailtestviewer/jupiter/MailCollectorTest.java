@@ -171,6 +171,92 @@ class MailCollectorTest {
   }
 
   @Test
+  void collectsMailsDeletedBeforeTheCollectionInTheOrderTheyArrived() throws Exception {
+    MailCollector collector = new MailCollector();
+    collector.startRecording(greenMail);
+    Mails.send(greenMail, "First deleted");
+    Mails.send(greenMail, "Second deleted");
+    greenMail.purgeEmailFromAllMailboxes();
+    Mails.send(greenMail, "Kept");
+
+    assertThat(collector.collectNew(greenMail))
+        .extracting(MailCollectorTest::subject, ReceivedMail::deliveredTo)
+        .containsExactly(
+            tuple("First deleted", List.of("to@example.com")),
+            tuple("Second deleted", List.of("to@example.com")),
+            tuple("Kept", List.of("to@example.com")));
+    assertThat(collector.collectNew(greenMail)).isEmpty();
+  }
+
+  @Test
+  void collectsAMailOnceWhenItIsDeletedForSomeOfItsRecipients() throws Exception {
+    MailCollector collector = new MailCollector();
+    collector.startRecording(greenMail);
+    Mails.sendToSeveral(greenMail, "Shared", "a@example.com", "b@example.com", "c@example.com");
+    GreenMailUser b = greenMail.getUserManager().getUserByEmail("b@example.com");
+    greenMail.getManagers().getImapHostManager().getInbox(b).deleteAllMessages();
+
+    assertThat(collector.collectNew(greenMail))
+        .extracting(MailCollectorTest::subject, ReceivedMail::deliveredTo)
+        .containsExactly(
+            tuple("Shared", List.of("a@example.com", "b@example.com", "c@example.com")));
+  }
+
+  @Test
+  void collectsADeletedCopyOnceTheMailIsDeliveredToAllItsRecipients() throws Exception {
+    CountDownLatch goOn = new CountDownLatch(1);
+    CountDownLatch deliveringToSecond = pauseBeforeSecondDelivery(greenMail, goOn);
+    MailCollector collector = new MailCollector();
+    collector.startRecording(greenMail);
+    ExecutorService threads = Executors.newCachedThreadPool();
+    try {
+      Future<?> sent = sendSharedFrom(threads);
+      await(deliveringToSecond);
+      greenMail.purgeEmailFromAllMailboxes();
+
+      assertThat(collectWithin(threads, collector::collectNew, greenMail)).isEmpty();
+
+      goOn.countDown();
+      sent.get(10, TimeUnit.SECONDS);
+      assertThat(collector.collectNew(greenMail))
+          .extracting(MailCollectorTest::subject, ReceivedMail::deliveredTo)
+          .containsExactly(
+              tuple("Shared", List.of("a@example.com", "b@example.com", "c@example.com")));
+    } finally {
+      goOn.countDown();
+      threads.shutdownNow();
+    }
+  }
+
+  @Test
+  void leavesOutDeletedMailsWhenAskedAndDoesNotCollectThemLater() throws Exception {
+    MailCollector collector = new MailCollector();
+    collector.startRecording(greenMail);
+    Mails.send(greenMail, "Deleted");
+    greenMail.purgeEmailFromAllMailboxes();
+    Mails.send(greenMail, "Kept");
+
+    assertThat(collector.collectNew(greenMail, false))
+        .extracting(MailCollectorTest::subject)
+        .containsExactly("Kept");
+    assertThat(collector.collectNew(greenMail)).isEmpty();
+  }
+
+  @Test
+  void theExtensionLeavesOutMailsDeletedBeforeAClassStarted() throws Exception {
+    assertThat(GreenMailTestViewerExtension.takeNewMails(greenMail, MailOwner.outsideClass(), null))
+        .isNull();
+    Mails.send(greenMail, "Deleted");
+    greenMail.purgeEmailFromAllMailboxes();
+    Mails.send(greenMail, "Kept");
+
+    GreenMailTestViewerExtension.OwnedMails taken =
+        GreenMailTestViewerExtension.takeNewMails(greenMail, MailOwner.outsideClass(), null);
+
+    assertThat(taken.mails).extracting(MailCollectorTest::subject).containsExactly("Kept");
+  }
+
+  @Test
   void collectsAnotherGreenMailWhileOneIsDelivering() throws Exception {
     MailCollector collector = new MailCollector();
     assertCollectsAnotherGreenMailWhileOneIsDelivering(collector::collectNew);

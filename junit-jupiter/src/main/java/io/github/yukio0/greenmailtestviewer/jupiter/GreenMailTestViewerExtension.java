@@ -39,7 +39,8 @@ import org.opentest4j.TestAbortedException;
  *
  * <p>It does not start or stop GreenMail. It collects the new emails at points of the test
  * lifecycle, such as right after each test method and each {@code @AfterEach} method, before other
- * extensions stop GreenMail. Recording never makes a test fail: problems are logged.
+ * extensions stop GreenMail. Emails that a test deletes from GreenMail before then are still
+ * collected. Recording never makes a test fail: problems are logged.
  */
 public final class GreenMailTestViewerExtension
     implements BeforeAllCallback,
@@ -491,11 +492,15 @@ public final class GreenMailTestViewerExtension
   static OwnedMails takeNewMails(
       GreenMailOperations greenMail, MailOwner intended, String intendedKey) {
     synchronized (OWNERSHIP) {
-      List<ReceivedMail> mails = COLLECTOR.collectNew(greenMail);
+      MailOwner owner = ACTIVE_TESTS.ownerOf(greenMail, intended, intendedKey);
+      // Mails deleted before the class started, such as by tests without the extension that share
+      // the GreenMail instance, are left out, so that they do not fill the viewer.
+      boolean withDeleted = owner.phase() != MailOwner.Phase.OUTSIDE_CLASS;
+      List<ReceivedMail> mails = COLLECTOR.collectNew(greenMail, withDeleted);
       if (mails.isEmpty()) {
         return null;
       }
-      return new OwnedMails(mails, ACTIVE_TESTS.ownerOf(greenMail, intended, intendedKey));
+      return new OwnedMails(mails, owner);
     }
   }
 

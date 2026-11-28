@@ -19,6 +19,7 @@ import io.github.yukio0.greenmailtestviewer.jupiter.samples.NotAnnotatedSample;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.PausedDeliverySample;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.PerClassExtensionSample;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.PerMethodExtensionSample;
+import io.github.yukio0.greenmailtestviewer.jupiter.samples.PurgeDuringTestSample;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.RecipientsSample;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.SeparateSendsSample;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.SharedFirstSample;
@@ -124,6 +125,14 @@ class GreenMailTestViewerExtensionTest {
       RecordedRun run = runSamples(StaticGreenMailSample.class);
 
       assertThat(run.mail("static first").testMethod()).isEqualTo("first");
+    }
+
+    @Test
+    void mailsDeletedDuringATestAreStillRecorded() throws IOException {
+      RecordedRun run = runSamples(PurgeDuringTestSample.class);
+
+      assertThat(run.subjectsOf("purgesBetweenTwoMails"))
+          .containsExactly("before the purge", "after the purge");
     }
   }
 

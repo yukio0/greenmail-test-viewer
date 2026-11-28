@@ -8,6 +8,7 @@ import com.icegreen.greenmail.store.MailFolder;
 import com.icegreen.greenmail.store.StoredMessage;
 import com.icegreen.greenmail.user.GreenMailUser;
 import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.System.Logger;
@@ -18,6 +19,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -124,7 +126,14 @@ final class MailCollector {
       }
       collected.add(uid);
       deliveryRecorder.forget(inbox, uid);
-      addDelivery(found, uid, user, message, transaction);
+      Date receivedDate = message.getReceivedDate();
+      addDelivery(
+          found,
+          uid,
+          user,
+          message.getMimeMessage(),
+          receivedDate == null ? 0L : receivedDate.getTime(),
+          transaction);
     }
     // A copy that is no longer in the inbox was deleted, unless it is still being delivered.
     for (Map.Entry<Long, DeliveryRecorder.Copy> entry :
@@ -135,9 +144,9 @@ final class MailCollector {
         continue;
       }
       deliveryRecorder.forget(inbox, uid);
-      StoredMessage message = copy.storedMessage();
+      MimeMessage message = copy.message();
       if (withDeleted && message != null && collected.add(uid)) {
-        addDelivery(found, uid, user, message, copy.transaction());
+        addDelivery(found, uid, user, message, copy.receivedAt(), copy.transaction());
       }
     }
     deliveries.addAll(found.values());
@@ -147,7 +156,8 @@ final class MailCollector {
       Map<Long, Delivery> deliveries,
       long uid,
       GreenMailUser user,
-      StoredMessage message,
+      MimeMessage message,
+      long receivedAt,
       Long transaction) {
     byte[] rawMime;
     try {
@@ -159,7 +169,6 @@ final class MailCollector {
           e);
       return;
     }
-    long receivedAt = message.getReceivedDate() == null ? 0L : message.getReceivedDate().getTime();
     deliveries.put(uid, new Delivery(user.getEmail(), rawMime, receivedAt, transaction));
   }
 
@@ -210,9 +219,9 @@ final class MailCollector {
     return mails;
   }
 
-  private static byte[] rawMime(StoredMessage message) throws IOException, MessagingException {
+  private static byte[] rawMime(MimeMessage message) throws IOException, MessagingException {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
-    message.getMimeMessage().writeTo(out);
+    message.writeTo(out);
     return out.toByteArray();
   }
 

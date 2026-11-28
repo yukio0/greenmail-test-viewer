@@ -14,6 +14,8 @@ import com.icegreen.greenmail.util.GreenMail;
 import com.icegreen.greenmail.util.ServerSetupTest;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.Mails;
 import jakarta.mail.MessagingException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -229,6 +231,25 @@ class MailCollectorTest {
   }
 
   @Test
+  void collectsAMailDeletedBeforeItsDeliveryReturned() throws Exception {
+    UserManager userManager = greenMail.getUserManager();
+    MessageDeliveryHandler delivery = userManager.getMessageDeliveryHandler();
+    userManager.setMessageDeliveryHandler(
+        (message, address) -> purgingAfterDelivery(delivery.handle(message, address)));
+    MailCollector collector = new MailCollector();
+    collector.startRecording(greenMail);
+
+    Mails.sendToSeveral(
+        greenMail, "Deleted at once", "a@example.com", "b@example.com", "c@example.com");
+
+    assertThat(greenMail.getReceivedMessages()).isEmpty();
+    assertThat(collector.collectNew(greenMail))
+        .extracting(MailCollectorTest::subject, ReceivedMail::deliveredTo)
+        .containsExactly(
+            tuple("Deleted at once", List.of("a@example.com", "b@example.com", "c@example.com")));
+  }
+
+  @Test
   void leavesOutDeletedMailsWhenAskedAndDoesNotCollectThemLater() throws Exception {
     MailCollector collector = new MailCollector();
     collector.startRecording(greenMail);
@@ -324,6 +345,27 @@ class MailCollectorTest {
       return delivery.handle(message, address);
     });
     return deliveringToSecond;
+  }
+
+  // Deletes the mail again before the delivery returns, as a client that takes each mail as soon as
+  // it arrives can.
+  private GreenMailUser purgingAfterDelivery(GreenMailUser user) {
+    return (GreenMailUser)
+        Proxy.newProxyInstance(
+            GreenMailUser.class.getClassLoader(),
+            new Class<?>[] {GreenMailUser.class},
+            (proxy, method, args) -> {
+              Object result;
+              try {
+                result = method.invoke(user, args);
+              } catch (InvocationTargetException e) {
+                throw e.getCause();
+              }
+              if (method.getName().equals("deliver")) {
+                greenMail.purgeEmailFromAllMailboxes();
+              }
+              return result;
+            });
   }
 
   private Future<?> sendSharedFrom(ExecutorService thread) {

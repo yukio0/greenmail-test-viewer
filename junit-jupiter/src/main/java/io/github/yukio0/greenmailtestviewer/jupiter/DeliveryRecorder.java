@@ -11,11 +11,13 @@ import com.icegreen.greenmail.user.MessageDeliveryHandler;
 import com.icegreen.greenmail.user.UserException;
 import com.icegreen.greenmail.user.UserManager;
 import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 import java.lang.ref.SoftReference;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -154,12 +156,15 @@ final class DeliveryRecorder {
     }
   }
 
-  /** A copy of a mail in one mailbox: its transaction, and the copy once GreenMail stored it. */
+  /** A copy of a mail in one mailbox: its transaction, and the mail once GreenMail stored it. */
   static final class Copy {
     private final long transaction;
     // Soft, so that copies that no collection takes, such as those that tests without the extension
-    // delete, do not fill the memory.
-    private volatile SoftReference<StoredMessage> stored;
+    // delete, do not fill the memory. It refers to the mail itself, which GreenMail holds while the
+    // copy is in the mailbox, so that the reference is not cleared before the copy is deleted.
+    private volatile SoftReference<MimeMessage> message;
+    // Written before message and read after it.
+    private long receivedAt;
 
     private Copy(long transaction) {
       this.transaction = transaction;
@@ -169,15 +174,20 @@ final class DeliveryRecorder {
       return transaction;
     }
 
-    /** The stored copy, or {@code null} if it could not be kept. */
-    StoredMessage storedMessage() {
-      SoftReference<StoredMessage> reference = stored;
+    /** The mail, or {@code null} if it could not be kept. */
+    MimeMessage message() {
+      SoftReference<MimeMessage> reference = message;
       return reference == null ? null : reference.get();
     }
 
-    private void keep(StoredMessage message) {
+    long receivedAt() {
+      return receivedAt;
+    }
+
+    private void keep(MimeMessage message, long receivedAt) {
       if (message != null) {
-        stored = new SoftReference<>(message);
+        this.receivedAt = receivedAt;
+        this.message = new SoftReference<>(message);
       }
     }
   }
@@ -238,12 +248,16 @@ final class DeliveryRecorder {
               new Class<?>[] {GreenMailUser.class},
               (proxy, method, args) ->
                   isDeliveryOf(method, args, message) && !recording.get()
-                      ? deliver(user, method, args, transaction)
+                      ? deliver(user, method, args, message, transaction)
                       : invoke(user, method, args));
     }
 
     private Object deliver(
-        GreenMailUser user, Method method, Object[] args, Transaction transaction)
+        GreenMailUser user,
+        Method method,
+        Object[] args,
+        MovingMessage message,
+        Transaction transaction)
         throws Throwable {
       MailFolder inbox = inboxOf(user);
       long uid = uidNext(inbox);
@@ -255,20 +269,20 @@ final class DeliveryRecorder {
       try {
         result = invoke(user, method, args);
       } catch (Throwable e) {
-        keepIfStored(inbox, uid, copy);
+        keepIfStored(inbox, uid, copy, message);
         end(userManager, transaction);
         throw e;
       } finally {
         recording.set(false);
       }
-      keepIfStored(inbox, uid, copy);
+      keepIfStored(inbox, uid, copy, message);
       deliveredToOne(userManager, transaction);
       return result;
     }
 
     // Kept before the transaction counts as delivered, so that a collection that finds the copy
     // deleted can take it.
-    private void keepIfStored(MailFolder inbox, long uid, Copy copy) {
+    private void keepIfStored(MailFolder inbox, long uid, Copy copy, MovingMessage message) {
       if (copy == null) {
         return;
       }
@@ -276,7 +290,7 @@ final class DeliveryRecorder {
         unremember(inbox, uid, copy);
         return;
       }
-      copy.keep(storedMessage(inbox, uid));
+      keep(copy, inbox, uid, message);
     }
 
     private Object invoke(GreenMailUser user, Method method, Object[] args) throws Throwable {
@@ -308,11 +322,18 @@ final class DeliveryRecorder {
     }
 
     // Called during GreenMail's delivery, like inboxOf.
-    private StoredMessage storedMessage(MailFolder folder, long uid) {
+    private void keep(Copy copy, MailFolder inbox, long uid, MovingMessage message) {
       try {
-        return folder.getMessage(uid);
+        StoredMessage stored = inbox.getMessage(uid);
+        if (stored != null) {
+          Date receivedDate = stored.getReceivedDate();
+          copy.keep(stored.getMimeMessage(), receivedDate == null ? 0L : receivedDate.getTime());
+        } else {
+          // Deleted before the delivery returned. GreenMail stored the message as it was sent.
+          copy.keep(message.getMessage(), System.currentTimeMillis());
+        }
       } catch (RuntimeException | LinkageError e) {
-        return null;
+        // Not kept. A copy still in the inbox is collected from there.
       }
     }
 

@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.icegreen.greenmail.Managers;
 import com.icegreen.greenmail.imap.ImapHostManager;
 import com.icegreen.greenmail.store.MailFolder;
+import com.icegreen.greenmail.store.StoredMessage;
 import com.icegreen.greenmail.user.GreenMailUser;
 import com.icegreen.greenmail.user.UserManager;
 import com.icegreen.greenmail.util.GreenMail;
 import com.icegreen.greenmail.util.ServerSetupTest;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.Mails;
+import java.lang.ref.SoftReference;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import org.junit.jupiter.api.AfterEach;
@@ -69,6 +72,23 @@ class DeliveryRecorderTest {
     Mails.send(greenMail, "next UID not read");
 
     assertThat(greenMail.waitForIncomingEmail(5_000, 1)).isTrue();
+  }
+
+  // A soft reference to anything else could be cleared while the mail is still in the inbox.
+  @Test
+  void keepsTheMailThatGreenMailHoldsWhileItIsInTheInbox() throws Exception {
+    DeliveryRecorder recorder = new DeliveryRecorder();
+    recorder.startRecording(greenMail.getManagers());
+
+    Mails.send(greenMail, "held by GreenMail");
+
+    GreenMailUser user = greenMail.getUserManager().getUserByEmail("to@example.com");
+    MailFolder inbox = greenMail.getManagers().getImapHostManager().getInbox(user);
+    StoredMessage stored = inbox.getMessages().get(0);
+    DeliveryRecorder.Copy copy = recorder.copiesIn(inbox).get(stored.getUid());
+    Field message = DeliveryRecorder.Copy.class.getDeclaredField("message");
+    message.setAccessible(true);
+    assertThat(((SoftReference<?>) message.get(copy)).get()).isSameAs(stored.getMimeMessage());
   }
 
   // The recording sees this ImapHostManager; GreenMail stores the mails with its own.

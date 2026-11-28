@@ -90,6 +90,56 @@ class GreenMailTestViewerPluginTest {
 
   @ParameterizedTest(name = "Gradle {0}")
   @MethodSource("gradleVersions")
+  void passesTheSettingsOfTheBuildScriptThroughTheConfigurationCache(String gradleVersion)
+      throws IOException {
+    write(
+        "build.gradle",
+        "plugins {",
+        "  id 'io.github.yukio0.greenmail-test-viewer'",
+        "}",
+        "greenmailTestViewer {",
+        "  port = 70000",
+        "  open = false",
+        "}");
+
+    BuildResult stored =
+        runner(gradleVersion, "greenmailTestViewer", "--configuration-cache").buildAndFail();
+    assertThat(stored.getOutput()).contains("--port must be an integer from 0 to 65535: 70000");
+
+    BuildResult reused =
+        runner(gradleVersion, "greenmailTestViewer", "--configuration-cache").buildAndFail();
+    assertThat(reused.getOutput())
+        .contains("Reusing configuration cache")
+        .contains("--port must be an integer from 0 to 65535: 70000");
+  }
+
+  @ParameterizedTest(name = "Gradle {0}")
+  @MethodSource("gradleVersions")
+  void worksWithIsolatedProjects(String gradleVersion) throws IOException {
+    write("gradle.properties", "org.gradle.unsafe.isolated-projects=true");
+    write("settings.gradle", Files.readString(project.resolve("settings.gradle")), "include 'app'");
+    write("build.gradle", "plugins {", "  id 'io.github.yukio0.greenmail-test-viewer'", "}");
+    write(
+        "app/build.gradle",
+        "plugins {",
+        "  id 'io.github.yukio0.greenmail-test-viewer'",
+        "}",
+        "greenmailTestViewer {",
+        "  port = 70000",
+        "}");
+
+    BuildResult root = runner(gradleVersion, ":greenmailTestViewer", "--args=--help").build();
+    // Gradle 8.0 writes "Isolated projects", later versions "Isolated Projects".
+    assertThat(root.getOutput())
+        .containsIgnoringCase("Isolated projects is an incubating feature")
+        .contains("Usage: java -jar greenmail-test-viewer.jar");
+
+    BuildResult app = runner(gradleVersion, ":app:greenmailTestViewer").buildAndFail();
+    assertThat(app.getOutput()).contains("--port must be an integer from 0 to 65535: 70000");
+  }
+
+  @ParameterizedTest(name = "Gradle {0}")
+  @MethodSource("gradleVersions")
   void readsTheSettingsOfAKotlinBuildScript(String gradleVersion) throws IOException {
     // Kotlin can assign to a property from Gradle 8.2, as the README says. Before, it calls set.
     boolean assigns = gradleVersion.equals(CURRENT);

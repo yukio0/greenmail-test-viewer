@@ -19,6 +19,11 @@ The notable changes in each version of GreenMail Test Viewer.
 - Downloaded attachments and `.eml` files whose names start with a name that Windows reserves and
   have several extensions, such as `NUL.tar.gz`, get a `_` in front, like `NUL.txt` already did.
 
+### Gradle plugin
+
+- Declares that it supports the configuration cache and Isolated Projects, which the Gradle Plugin
+  Portal shows.
+
 ## 0.1.0 - 2026-11-23
 
 The first release.

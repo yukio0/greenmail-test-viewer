@@ -33,6 +33,13 @@ gradlePlugin {
       description = 'Adds the greenmailTestViewer task, which starts GreenMail Test Viewer to show ' +
           'the emails that the JUnit tests of the build sent to GreenMail.'
       tags = ['greenmail', 'junit', 'testing', 'email']
+      // The tests run the task with these features on the oldest and the current Gradle.
+      compatibility {
+        features {
+          configurationCache = true
+          isolatedProjects = true
+        }
+      }
     }
   }
 }

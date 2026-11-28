@@ -112,7 +112,8 @@ Run the tests as usual. The records are written to `build/greenmail-test-viewer/
 
 Start the viewer in the root directory of your project. It finds the records of all modules below
 the directory where it starts, and shows them at <http://127.0.0.1:3080/>. It checks for new records
-every few seconds, so you can keep it open while you run tests.
+every few seconds, so you can keep it open while you run tests. A module that writes records for the
+first time while the viewer runs can take up to 30 seconds to appear.
 
 #### With Gradle
 

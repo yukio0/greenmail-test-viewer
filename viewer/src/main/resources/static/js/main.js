@@ -164,12 +164,16 @@ function resolveSelection() {
     saveUrl(false);
     return;
   }
+  // A selection that a refresh no longer finds is kept, such as while a module is cleaned and
+  // tested again. One from the URL or from before another run was chosen falls back to all
+  // messages.
   const key = state.pendingNode ?? state.selection.key;
   const found = findSelection(state.tree, key);
   if (found != null) {
     state.selection = found;
   } else if (state.pendingNode != null) {
     state.selection = ALL;
+    state.pendingNode = null;
     saveUrl(false);
   }
   state.pendingNode = null;
@@ -801,6 +805,7 @@ async function poll() {
 
 elements.runSelect.addEventListener("change", () => {
   state.run = elements.runSelect.value;
+  state.pendingNode = state.selection.key;
   saveUrl(true);
   refresh().catch(showFailure);
 });

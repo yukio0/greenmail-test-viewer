@@ -18,6 +18,9 @@ The notable changes in each version of GreenMail Test Viewer.
 
 - Downloaded attachments and `.eml` files whose names start with a name that Windows reserves and
   have several extensions, such as `NUL.tar.gz`, get a `_` in front, like `NUL.txt` already did.
+- Choosing a run that does not have the selected test or class shows all messages, instead of an
+  empty list under the old selection. A link whose selection no longer exists also no longer keeps
+  it in the address.
 
 ### Gradle plugin
 

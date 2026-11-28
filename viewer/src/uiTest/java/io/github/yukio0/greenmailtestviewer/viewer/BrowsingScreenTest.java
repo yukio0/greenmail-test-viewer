@@ -318,4 +318,34 @@ class BrowsingScreenTest extends ScreenTestBase {
     assertThat(cards()).containsText("first try");
     assertThat(page.locator("#failed-count")).hasText("1");
   }
+
+  @Test
+  void anotherRunKeepsTheSelectedTestOnlyIfItHasIt() {
+    RunFiles first = output.run("run1", "2026-11-01T09:00:00.000Z");
+    first.testMail(SIGNUP, "sendsWelcome", "Welcome, first try", "2026-11-01T09:00:01.000Z");
+    first.test(SIGNUP, "sendsWelcome", "passed", "2026-11-01T09:00:02.000Z");
+    first.testMail(SIGNUP, "sendsOffer", "Offer, first try", "2026-11-01T09:00:03.000Z");
+    first.test(SIGNUP, "sendsOffer", "passed", "2026-11-01T09:00:04.000Z");
+    first.finish("2026-11-01T09:00:05.000Z");
+    RunFiles second = output.run("run2", "2026-11-01T10:00:00.000Z");
+    second.testMail(SIGNUP, "sendsWelcome", "Welcome, second try", "2026-11-01T10:00:01.000Z");
+    second.test(SIGNUP, "sendsWelcome", "passed", "2026-11-01T10:00:02.000Z");
+    second.finish("2026-11-01T10:00:03.000Z");
+    open();
+
+    select("sendsWelcome()");
+    page.locator("#run-select").selectOption(new SelectOption().setIndex(2));
+    assertThat(listTitle()).hasText("sendsWelcome()");
+    assertThat(cards()).hasCount(1);
+    assertThat(cards()).containsText("Welcome, first try");
+
+    select("sendsOffer()");
+    assertThat(listTitle()).hasText("sendsOffer()");
+    page.locator("#run-select").selectOption(new SelectOption().setIndex(1));
+    assertThat(treeItem("sendsOffer()")).hasCount(0);
+    assertThat(listTitle()).hasText("All messages");
+    assertThat(cards()).hasCount(1);
+    assertThat(cards()).containsText("Welcome, second try");
+    assertThat(page).not().hasURL(Pattern.compile("node="));
+  }
 }

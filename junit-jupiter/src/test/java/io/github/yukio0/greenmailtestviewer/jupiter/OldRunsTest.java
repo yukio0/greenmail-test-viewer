@@ -28,8 +28,16 @@ class OldRunsTest {
     Path outside = outsideDirectory("outside");
     link(old.resolve("tests/000002.json"), outside);
 
-    OldRuns.delete(runs, current, 0);
+    try (CapturedLogs logs = new CapturedLogs(OldRuns.class)) {
+      OldRuns.delete(runs, current, 0);
 
+      assertThat(logs.infos())
+          .containsExactly(
+              "Kept the directory of the old run "
+                  + old
+                  + " because it contains files that the extension did not write. Only the files"
+                  + " that the extension wrote were deleted.");
+    }
     assertThat(old.resolve("notes.txt")).hasContent("kept");
     assertThat(old.resolve("messages/notes.txt")).hasContent("kept");
     assertThat(old.resolve("run.json")).doesNotExist();

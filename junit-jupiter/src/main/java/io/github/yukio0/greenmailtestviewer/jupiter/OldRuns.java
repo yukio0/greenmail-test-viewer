@@ -121,7 +121,8 @@ final class OldRuns {
           LOGGER.log(
               Level.INFO,
               "Kept the directory of the old run {0} because it contains files that the"
-                  + " extension did not write. Only the extension's files were deleted.",
+                  + " extension did not write. Only the files that the extension wrote were"
+                  + " deleted.",
               run);
         }
       } catch (IOException | UncheckedIOException e) {

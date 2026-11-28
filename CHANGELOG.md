@@ -11,6 +11,8 @@ The notable changes in each version of GreenMail Test Viewer.
   only the emails still in GreenMail at the end of the test were recorded.
 - After recording stopped during a test, a later JUnit execution in the same JVM no longer
   records the emails of the same GreenMail instance as `(Ambiguous)`.
+- Fixed a garbled word in the message logged when an old run directory is kept because it contains
+  other files.
 
 ### Viewer
 

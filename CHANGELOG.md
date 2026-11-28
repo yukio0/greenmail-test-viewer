@@ -12,6 +12,11 @@ The notable changes in each version of GreenMail Test Viewer.
 - After recording stopped during a test, a later JUnit execution in the same JVM no longer
   records the emails of the same GreenMail instance as `(Ambiguous)`.
 
+### Viewer
+
+- Downloaded attachments and `.eml` files whose names start with a name that Windows reserves and
+  have several extensions, such as `NUL.tar.gz`, get a `_` in front, like `NUL.txt` already did.
+
 ## 0.1.0 - 2026-11-23
 
 The first release.

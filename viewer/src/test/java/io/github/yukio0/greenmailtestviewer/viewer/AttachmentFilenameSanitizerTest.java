@@ -74,6 +74,18 @@ class AttachmentFilenameSanitizerTest {
   }
 
   @Test
+  void prefixesWindowsReservedNamesWithSeveralExtensions() {
+    assertThat(sanitizer.sanitize("NUL.tar.gz", "1")).isEqualTo("_NUL.tar.gz");
+    assertThat(sanitizer.sanitize("con.tar.eml", "1")).isEqualTo("_con.tar.eml");
+  }
+
+  @Test
+  void keepsNamesThatOnlyContainAWindowsReservedName() {
+    assertThat(sanitizer.sanitize("CONSOLE.txt", "1")).isEqualTo("CONSOLE.txt");
+    assertThat(sanitizer.sanitize("report.con.txt", "1")).isEqualTo("report.con.txt");
+  }
+
+  @Test
   void limitsVeryLongFileNameWhilePreservingExtension() {
     String sanitized = sanitizer.sanitize("a".repeat(200) + ".txt", "1");
 

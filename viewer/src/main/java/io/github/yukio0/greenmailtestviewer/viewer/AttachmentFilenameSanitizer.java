@@ -54,8 +54,9 @@ final class AttachmentFilenameSanitizer {
     return trimmed.substring(start, end);
   }
 
+  // Windows treats a reserved name with any extensions, such as NUL.tar.gz, as the device.
   private static String avoidWindowsReservedName(String name, String fallback) {
-    int dot = name.lastIndexOf('.');
+    int dot = name.indexOf('.');
     String stem = (dot < 0 ? name : name.substring(0, dot)).toUpperCase(Locale.ROOT);
     if (stem.isBlank()) {
       return fallback;

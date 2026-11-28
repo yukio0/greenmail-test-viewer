@@ -4,6 +4,11 @@ The notable changes in each version of GreenMail Test Viewer.
 
 ## Unreleased
 
+### Extension
+
+- After recording stopped during a test, a later JUnit execution in the same JVM no longer
+  records the emails of the same GreenMail instance as `(Ambiguous)`.
+
 ## 0.1.0 - 2026-11-23
 
 The first release.

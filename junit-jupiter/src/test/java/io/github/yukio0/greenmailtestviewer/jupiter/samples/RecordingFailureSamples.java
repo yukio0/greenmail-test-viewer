@@ -6,6 +6,7 @@ import com.icegreen.greenmail.util.GreenMail;
 import com.icegreen.greenmail.util.ServerSetupTest;
 import io.github.yukio0.greenmailtestviewer.jupiter.GreenMailTestViewer;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -228,6 +229,65 @@ public final class RecordingFailureSamples {
                     throw new NoSuchMethodError("GreenMailOperations." + method.getName());
                 }
               });
+    }
+  }
+
+  /** GreenMail that lacks the methods the extension calls once {@link #broken} is set. */
+  public static final class BreakingGreenMail {
+
+    public static final GreenMail GREEN_MAIL = new GreenMail(ServerSetupTest.SMTP.dynamicPort());
+
+    public static volatile boolean broken;
+
+    public static final GreenMailOperations OPERATIONS =
+        (GreenMailOperations)
+            Proxy.newProxyInstance(
+                GreenMailOperations.class.getClassLoader(),
+                new Class<?>[] {GreenMailOperations.class},
+                (proxy, method, args) -> {
+                  if (method.getDeclaringClass() == Object.class) {
+                    switch (method.getName()) {
+                      case "equals":
+                        return proxy == args[0];
+                      case "hashCode":
+                        return System.identityHashCode(proxy);
+                      default:
+                        return "breaking GreenMail";
+                    }
+                  }
+                  if (broken) {
+                    throw new NoSuchMethodError("GreenMailOperations." + method.getName());
+                  }
+                  try {
+                    return method.invoke(GREEN_MAIL, args);
+                  } catch (InvocationTargetException e) {
+                    throw e.getCause();
+                  }
+                });
+
+    private BreakingGreenMail() {}
+  }
+
+  @GreenMailTestViewer
+  public static class StopsRecordingDuringATest {
+
+    static final GreenMailOperations greenMail = BreakingGreenMail.OPERATIONS;
+
+    @Test
+    void sendsAndBreaks() {
+      Mails.send(BreakingGreenMail.GREEN_MAIL, "before the break");
+      BreakingGreenMail.broken = true;
+    }
+  }
+
+  @GreenMailTestViewer
+  public static class UsesTheSameGreenMailLater {
+
+    static final GreenMailOperations greenMail = BreakingGreenMail.OPERATIONS;
+
+    @Test
+    void sends() {
+      Mails.send(BreakingGreenMail.GREEN_MAIL, "after the break");
     }
   }
 

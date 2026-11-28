@@ -15,7 +15,8 @@ import org.junit.jupiter.api.extension.ExtensionContext.Store;
 
 /**
  * One JUnit execution, stored in its root store: its number in this JVM, its start time and one run
- * per output directory. The runs are finished when JUnit closes the store.
+ * per output directory. When JUnit closes the store, the runs are finished and the tests still
+ * registered as running are let go.
  */
 @SuppressWarnings("deprecation")
 final class JUnitExecution implements Store.CloseableResource, AutoCloseable {
@@ -29,9 +30,22 @@ final class JUnitExecution implements Store.CloseableResource, AutoCloseable {
   private final OffsetDateTime startedAt = RunWriter.now();
   private final Map<Path, RunWriter> writers = new LinkedHashMap<>();
   private final AtomicBoolean recordingStopped = new AtomicBoolean();
+  private final ActiveTests activeTests;
 
-  long number() {
-    return number;
+  JUnitExecution(ActiveTests activeTests) {
+    this.activeTests = activeTests;
+  }
+
+  /**
+   * The key of a running test in {@link ActiveTests}. It includes the execution, so that the same
+   * test in two overlapping executions counts twice.
+   */
+  String testKey(String uniqueId) {
+    return keyPrefix() + uniqueId;
+  }
+
+  private String keyPrefix() {
+    return number + ":";
   }
 
   boolean isRecordingStopped() {
@@ -61,6 +75,8 @@ final class JUnitExecution implements Store.CloseableResource, AutoCloseable {
   // JUnit 5.13 and later close AutoCloseable values, older versions CloseableResource.
   @Override
   public void close() {
+    // Tests can be left running, for example when recording stopped during them.
+    activeTests.finishAll(keyPrefix());
     List<RunWriter> toFinish;
     synchronized (this) {
       toFinish = new ArrayList<>(writers.values());

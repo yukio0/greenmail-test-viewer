@@ -16,6 +16,7 @@ import io.github.yukio0.greenmailtestviewer.jupiter.samples.OverlappingExecution
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.PerMethodExtensionSample;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.RecipientsSample;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.RecordingFailureSamples;
+import io.github.yukio0.greenmailtestviewer.jupiter.samples.RecordingFailureSamples.BreakingGreenMail;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.SameTestInTwoExecutionsSample;
 import io.github.yukio0.greenmailtestviewer.jupiter.samples.SharedGreenMail;
 import java.io.BufferedReader;
@@ -487,6 +488,25 @@ class FailuresAndConstraintsTest {
       // The next execution records again.
       RecordedRun run = runSamples(PerMethodExtensionSample.class);
       assertThat(run.mail("per-method one").testMethod()).isEqualTo("sendsOneMail");
+    }
+
+    @Test
+    void aTestRunningWhenRecordingStoppedDoesNotShareTheMailsOfALaterExecution()
+        throws IOException {
+      BreakingGreenMail.GREEN_MAIL.start();
+      try {
+        run(Collections.emptyMap(), true, RecordingFailureSamples.StopsRecordingDuringATest.class);
+        BreakingGreenMail.broken = false;
+
+        RecordedRun run = runSamples(RecordingFailureSamples.UsesTheSameGreenMailLater.class);
+
+        RecordedMail mail = run.mail("after the break");
+        assertThat(mail.phase()).isEqualTo("test");
+        assertThat(mail.testMethod()).isEqualTo("sends");
+      } finally {
+        BreakingGreenMail.broken = false;
+        BreakingGreenMail.GREEN_MAIL.stop();
+      }
     }
   }
 

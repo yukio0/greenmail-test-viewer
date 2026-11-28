@@ -3,6 +3,7 @@ package io.github.yukio0.greenmailtestviewer.jupiter;
 import com.icegreen.greenmail.base.GreenMailOperations;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,18 @@ final class ActiveTests {
       tests.remove(key);
       if (tests.isEmpty()) {
         testsByGreenMail.remove(greenMail);
+      }
+    }
+  }
+
+  /** Finishes the tests whose key starts with the prefix, such as those of one JUnit execution. */
+  synchronized void finishAll(String keyPrefix) {
+    Iterator<Map<String, MailOwner>> all = testsByGreenMail.values().iterator();
+    while (all.hasNext()) {
+      Map<String, MailOwner> tests = all.next();
+      tests.keySet().removeIf(key -> key.startsWith(keyPrefix));
+      if (tests.isEmpty()) {
+        all.remove();
       }
     }
   }

@@ -540,9 +540,8 @@ public final class GreenMailTestViewerExtension
     }
   }
 
-  // Includes the execution, so that the same test in two overlapping executions counts twice.
   private static String runningTestKey(ExtensionContext methodContext) {
-    return execution(methodContext).number() + ":" + methodContext.getUniqueId();
+    return execution(methodContext).testKey(methodContext.getUniqueId());
   }
 
   private static JUnitExecution execution(ExtensionContext context) {
@@ -550,7 +549,7 @@ public final class GreenMailTestViewerExtension
         .getRoot()
         .getStore(NAMESPACE)
         .getOrComputeIfAbsent(
-            JUnitExecution.class, key -> new JUnitExecution(), JUnitExecution.class);
+            JUnitExecution.class, key -> new JUnitExecution(ACTIVE_TESTS), JUnitExecution.class);
   }
 
   private static void waitForAsynchronousMails(ExtensionContext context) {
